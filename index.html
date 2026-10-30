@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My first page</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fbf8f2; --ink: #1d1a16; --accent: #b07f2e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0f161d; --ink: #ede6d9; --accent: #e2c084; } }
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 18px/1.5 system-ui, sans-serif; padding: 24px; box-sizing: border-box; text-align: center; }
+  h1 { font: 600 2rem/1.2 Georgia, serif; margin: 0 0 8px; }
+  p { margin: 0; opacity: .8; }
+  b { color: var(--accent); }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Hello!</h1>
+    <p>This page is waiting for your AI. Ask it to build something in <b>Trinity</b>, and the new version shows up here.</p>
+  </main>
+</body>
+</html>

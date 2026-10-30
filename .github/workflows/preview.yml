@@ -1,0 +1,54 @@
+# Friend sandbox: every pull request gets its own live preview at https://<owner>.github.io/<repo>/pr-<number>/.
+# Copy this file to .github/workflows/preview.yml in the sandbox repo (see README.md). It uses only the repo's own GITHUB_TOKEN: no secrets.
+# The deployment it reports (environment_url on the PR head sha) is what Trinity's Build tab shows as "Open preview".
+name: preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+permissions:
+  contents: write      # push the built page to the gh-pages branch
+  deployments: write   # tell GitHub (and Trinity) where the preview lives
+concurrency:
+  group: pages-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    # a pull request from a fork gets a read-only token; the sandbox only takes branches pushed by Trinity's app
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          path: site
+      - name: Publish to gh-pages
+        id: publish
+        run: |
+          set -euo pipefail
+          dir="${PR:+pr-$PR}"; dir="${dir:-.}"
+          git clone --quiet --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" pages 2>/dev/null || {
+            git init --quiet pages && git -C pages checkout --quiet -b gh-pages && git -C pages remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"; }
+          mkdir -p "pages/$dir"
+          if [ "$dir" = "." ]; then find pages -mindepth 1 -maxdepth 1 ! -name .git ! -name 'pr-*' -exec rm -rf {} +; else rm -rf "pages/$dir" && mkdir -p "pages/$dir"; fi
+          rsync -a --exclude .git --exclude .github site/ "pages/$dir/"
+          touch pages/.nojekyll
+          cd pages && git add -A && git -c user.name=preview-bot -c user.email=preview-bot@users.noreply.github.com commit --quiet -m "preview ${dir} ${SHA}" || true
+          git push --quiet origin gh-pages
+          owner="${REPO%%/*}"; name="${REPO#*/}"
+          base="https://${owner,,}.github.io/${name}"
+          echo "url=${base}/${PR:+pr-$PR/}" >> "$GITHUB_OUTPUT"
+      - name: Report the preview to the pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          id=$(gh api "repos/${REPO}/deployments" -f ref="$SHA" -f environment="pr-${PR}" -F auto_merge=false -F transient_environment=true -F 'required_contexts[]' --jq .id)
+          # GitHub Pages needs a moment to serve the new files; wait for the page (bounded), then report success.
+          for _ in $(seq 1 30); do curl -fsS -o /dev/null "${{ steps.publish.outputs.url }}" && break; sleep 4; done
+          gh api "repos/${REPO}/deployments/${id}/statuses" -f state=success -f environment_url="${{ steps.publish.outputs.url }}" -f log_url="${{ github.server_url }}/${REPO}/actions/runs/${{ github.run_id }}" >/dev/null
